@@ -23,7 +23,14 @@ std::wstring Hex(std::wstring_view value){
     for(auto c:clean)for(unsigned shift:{0U,8U}){unsigned b=(c>>shift)&255;out+=digits[b>>4];out+=digits[b&15];}return out;
 }
 std::wstring Base(std::wstring_view base){std::wstring out(base);auto i=out.find(L"://");if(i!=out.npos){auto path=out.find_first_of(L"/?",i+3);if(path==out.npos)out+=L'/';else if(out[path]==L'?')out.insert(path,1,L'/');}return out;}
-int LegacyInt(const std::string& s){return static_cast<int>(strtol(s.c_str(),nullptr,10));}
+int LegacyInt(const std::string& s){
+    // The original CRT wraps its decimal accumulator at 32 bits. strtol
+    // saturates instead, changing both the selected ID and download Code.
+    size_t i=0;while(i<s.size() && (s[i]==' ' || (s[i]>='\t' && s[i]<='\r')))++i;
+    bool negative=false;if(i<s.size() && (s[i]=='+'||s[i]=='-'))negative=s[i++]=='-';
+    unsigned value=0;for(;i<s.size() && s[i]>='0' && s[i]<='9';++i)value=value*10+unsigned(s[i]-'0');
+    return std::bit_cast<int>(negative?0U-value:value);
+}
 void ServerError(const XmlNode& root,unsigned fallback=32010){auto message=root.Attr("errmsg");auto code=root.Attr("errcode");throw Failure(code.empty()?fallback:static_cast<unsigned>(LegacyInt(code)),message.c_str(),true);}
 std::wstring HeaderHex(std::wstring_view s){std::wstring out;unsigned byte=0,low=0;size_t count=0;
     for(size_t i=0;i+1<s.size();i+=2){auto digit=[](wchar_t c){return c>=L'0'&&c<=L'9'?c-L'0':c>=L'a'&&c<=L'f'?c-L'a'+10:c>=L'A'&&c<=L'F'?c-L'A'+10:-1;};int a=digit(s[i]),b=digit(s[i+1]);if(a<0||b<0)break;byte=(a<<4)|b;if(count++%2==0)low=byte;else out+=wchar_t(low|(byte<<8));}Replace(out,L"\\n",L"\r\n");return out;}
@@ -40,7 +47,7 @@ int DownloadCode(unsigned id,std::string_view bytes){
 std::vector<Candidate> FindLyrics(Transport& transport,const Service& service,const NetworkValue& net,
     const std::shared_ptr<Abort>& abort,std::wstring_view artist,std::wstring_view title){
     auto response=transport.Get(SearchUrl(service.url,artist,title),net,abort);
-    if(response.body.empty())throw Failure(32004,"");
+    if(response.body.empty())throw Failure(response.status?response.status:32004,"");
     auto root=ParseXml(response.body,true);std::vector<Candidate> rows;
     for(auto& node:root.children)if(node.name=="lrc"){
         if(rows.size()>=10000)throw Failure(32005,"Too many lyric results");
@@ -50,7 +57,7 @@ std::vector<Candidate> FindLyrics(Transport& transport,const Service& service,co
 Downloaded DownloadLyric(Transport& transport,const Service& service,const NetworkValue& net,
     const std::shared_ptr<Abort>& abort,const Candidate& row){
     auto url=Base(service.url)+L"?dl?Id="+std::to_wstring(row.id)+L"&Code="+std::to_wstring(DownloadCode(static_cast<unsigned>(row.id),row.artist+row.title))+L"&";
-    auto response=transport.Get(url,net,abort);if(response.body.empty())throw Failure(32004,"");
+    auto response=transport.Get(url,net,abort);if(response.body.empty())throw Failure(response.status?response.status:32004,"");
     if(response.body.starts_with("<result "))ServerError(ParseXml(response.body,true),0);
     auto text=Wide(response.body);Replace(text,L"\n\r",L"\r\n");Replace(text,L"\r\n\r",L"\r\n");
     return {std::move(text),HeaderHex(response.title),HeaderHex(response.url)};

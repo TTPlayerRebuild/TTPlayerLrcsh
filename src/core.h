@@ -32,27 +32,35 @@ struct NetworkValue {
 };
 struct Abort {
     std::atomic<bool> canceled{};
+    const DWORD started{GetTickCount()};
     std::mutex mutex;
     HINTERNET request{};
     void Cancel() noexcept;
     void Attach(HINTERNET);
     void Close() noexcept;
-    void Check() const {if(canceled)throw Canceled{};}
+    bool Expired() const {return static_cast<DWORD>(GetTickCount()-started)>=65000;}
+    void Check() const {if(canceled)throw Canceled{};if(Expired())throw Failure(408,"");}
     ~Abort(){Close();}
 };
-struct Response {std::string body; std::wstring title,url;};
+struct Response {std::string body; std::wstring title,url; unsigned status{200};};
 class Transport {
 public:
     Transport(); ~Transport();
+    void Initialize(const NetworkValue&);
     Response Get(const std::wstring&,const NetworkValue&,const std::shared_ptr<Abort>&);
 private:
     struct Impl; std::unique_ptr<Impl> impl_;
 };
 struct XmlNode {
     std::string name; std::map<std::string,std::string> attrs; std::vector<XmlNode> children;
+    // Source spans permit lossless catalog persistence without reconstructing
+    // unknown attributes, text, comments, or extension elements.
+    size_t begin{},end{};
+    std::vector<std::pair<std::string,std::pair<size_t,size_t>>> attribute_spans;
     std::string Attr(const char* key) const {auto i=attrs.find(key);return i==attrs.end()?std::string{}:i->second;}
 };
 XmlNode ParseXml(std::string_view,bool tolerant=false);
+std::string CatalogXml(std::string_view,const XmlNode&);
 std::string EscapeXml(std::string_view);
 struct Service {std::wstring name,url;};
 struct Catalog {
@@ -63,6 +71,7 @@ struct Catalog {
     void Refresh(Transport&,const NetworkValue&,const std::shared_ptr<Abort>&);
 };
 std::shared_ptr<Catalog> Services();
+Search* CreateSearch(std::shared_ptr<Catalog>,int);
 bool ValidUrl(std::wstring_view);
 struct Candidate {int id{}; std::string artist,title;};
 std::wstring SearchUrl(std::wstring_view,std::wstring_view,std::wstring_view);

@@ -1,5 +1,6 @@
 #include "core.h"
 #include <charconv>
+#include <algorithm>
 
 namespace ttp::lrc {
 std::wstring Wide(std::string_view bytes) {
@@ -49,7 +50,9 @@ struct Parser {
             if(end!=s.npos && end-p<=16){auto token=s.substr(p+1,end-p-1);
                 for(auto [key,c]:{std::pair{"amp",'&'}, {"lt",'<'},{"gt",'>'},{"quot",'"'},{"apos",'\''}})
                     if(token==key){out+=c;used=true;break;}
-                if(!used && token.starts_with('#')){
+                // Legacy lyrics signatures use the original attribute bytes:
+                // its parser decodes the five named entities, not numeric ones.
+                if(!tolerant && !used && token.starts_with('#')){
                     token.remove_prefix(1);int base=10;if(token.starts_with('x')){base=16;token.remove_prefix(1);}
                     unsigned cp{};auto v=std::from_chars(token.data(),token.data()+token.size(),cp,base);
                     if(v.ec!=std::errc{} || v.ptr!=token.data()+token.size() || !cp || cp>0x10ffff || (cp>=0xd800&&cp<=0xdfff))Bad();
@@ -63,12 +66,14 @@ struct Parser {
         if(p==s.size())Bad();++p;return out;
     }
     XmlNode Node(unsigned depth){
-        if(depth>16 || ++nodes>20000 || !At("<"))Bad();++p;XmlNode n;n.name=Name();
-        for(;;){Space();if(At("/>")){p+=2;return n;}if(At(">")){++p;break;}
+        if(depth>16 || ++nodes>20000 || !At("<"))Bad();XmlNode n;n.begin=p++;n.name=Name();
+        size_t attributes=0;
+        for(;;){auto begin=p;Space();if(At("/>")){p+=2;n.end=p;return n;}if(At(">")){++p;break;}
             auto key=Name();Space();if(!At("="))Bad();++p;Space();auto value=Value();
-            if(n.attrs.size()>=128 || !n.attrs.emplace(std::move(key),std::move(value)).second)Bad();}
+            if(++attributes>128)Bad();n.attribute_spans.push_back({key,{begin,p}});
+            if(!n.attrs.emplace(std::move(key),std::move(value)).second && !tolerant)Bad();}
         for(;;){Space();if(Special())continue;
-            if(At("</")){p+=2;auto name=Name();Space();if(name!=n.name||!At(">"))Bad();++p;return n;}
+            if(At("</")){p+=2;auto name=Name();Space();if(name!=n.name||!At(">"))Bad();++p;n.end=p;return n;}
             if(At("<![CDATA[")){auto end=s.find("]]>",p+9);if(end==s.npos)Bad();p=end+3;continue;}
             if(At("<")){n.children.push_back(Node(depth+1));continue;}
             if(p==s.size())Bad();while(p<s.size() && s[p]!='<')++p;
@@ -78,8 +83,15 @@ struct Parser {
 }
 XmlNode ParseXml(std::string_view bytes,bool tolerant){
     if(bytes.size()>BodyLimit || bytes.find('\0')!=bytes.npos)throw Failure(32005,"Invalid XML size");
-    if(bytes.starts_with("\xef\xbb\xbf"))bytes.remove_prefix(3);
-    Wide(bytes);Parser p{bytes,0,0,tolerant};p.Space();while(p.Special())p.Space();auto n=p.Node(0);p.Space();while(p.Special())p.Space();if(p.p!=bytes.size())p.Bad();return n;
+    Wide(bytes);Parser p{bytes,bytes.starts_with("\xef\xbb\xbf")?3U:0U,0,tolerant};p.Space();while(p.Special())p.Space();auto n=p.Node(0);p.Space();while(p.Special())p.Space();if(p.p!=bytes.size())p.Bad();return n;
+}
+std::string CatalogXml(std::string_view bytes,const XmlNode& root){
+    std::vector<std::pair<size_t,size_t>> remove;
+    for(const auto& [key,span]:root.attribute_spans)if(key=="query_url")remove.push_back(span);
+    for(const auto& child:root.children)if(child.name=="extra")remove.push_back({child.begin,child.end});
+    std::sort(remove.rbegin(),remove.rend());std::string out(bytes);
+    for(const auto& [begin,end]:remove)out.erase(begin,end-begin);
+    return out;
 }
 std::string EscapeXml(std::string_view value){std::string out;for(char c:value){switch(c){case '&':out+="&amp;";break;case '"':out+="&quot;";break;case '<':out+="&lt;";break;case '>':out+="&gt;";break;default:out+=c;}}return out;}
 }

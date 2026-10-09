@@ -38,6 +38,8 @@ struct Control : IUnknown {
     // flags must be zero in version 1. Strings are copied before return.
     virtual HRESULT STDMETHODCALLTYPE Configure(LPCWSTR name,LPCWSTR url,DWORD flags)=0;
     // Terminal cancellation; no new operation accepted. Thread-safe, no wait.
+    // A callback admitted before Cancel may finish. Final Release drains it;
+    // release on the worker callback itself never waits for its own thread.
     virtual HRESULT STDMETHODCALLTYPE Cancel()=0;
 };
 using GetAddIn=HRESULT (WINAPI*)(AddIn**);

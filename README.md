@@ -29,3 +29,7 @@ Action 独立构建，`Release a Version` 使用北京时间日期和递增 `pN`
 旧宿主保留两个工厂限制；重建版通过 `Control::Configure` 可以使用编辑器内任意条目，而不修改旧接口结构。
 
 兼容范围及有意修正见 [重建说明](docs/RECONSTRUCTION.md)，实际结果和未完成项目见 [验证记录](docs/VALIDATION.md)。不声称逐字节复刻或所有系统均已实测。
+
+最新的逐项差异、原 DLL 对照证据和建议补全顺序见 [原版差异审计](docs/ORIGINAL_PARITY_AUDIT_20261009.md)。
+
+审计后修复、XP / Win7 实测和保留差异见 [兼容修复记录](docs/PARITY_FIXES_20261009.md)。

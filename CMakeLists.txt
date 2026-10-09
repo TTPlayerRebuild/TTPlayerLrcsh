@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(cmake/legacy_windows.cmake)
 include(cmake/size_release.cmake)
 include(cmake/version.cmake)
-add_library(ttp_lrcsh SHARED src/plugin.cpp src/protocol.cpp src/transport.cpp
+add_library(ttp_lrcsh SHARED src/plugin.cpp src/search.cpp src/protocol.cpp src/transport.cpp
   src/catalog.cpp src/xml.cpp src/strings.rc src/ttp_lrcsh.def
   "${CMAKE_CURRENT_BINARY_DIR}/generated/version.rc")
 add_dependencies(ttp_lrcsh ttp_lrcsh_version)
@@ -16,7 +16,7 @@ target_include_directories(ttp_lrcsh PUBLIC include PRIVATE src)
 target_compile_definitions(ttp_lrcsh PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN
   _WIN32_WINNT=0x0501 _CRT_SECURE_NO_WARNINGS)
 target_compile_options(ttp_lrcsh PRIVATE /W4 /permissive- /EHsc /GR- /utf-8)
-target_link_libraries(ttp_lrcsh PRIVATE wininet ole32 uuid)
+target_link_libraries(ttp_lrcsh PRIVATE wininet ole32 uuid user32)
 set_target_properties(ttp_lrcsh PROPERTIES PREFIX "" OUTPUT_NAME "ttp_lrcsh")
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 add_custom_command(TARGET ttp_lrcsh POST_BUILD COMMAND "${Python3_EXECUTABLE}"
