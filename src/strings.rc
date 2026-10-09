@@ -39,6 +39,11 @@ BEGIN
     32010 "Can not find the lyrics"
     32011 "Application version is too old"
     32020 "Unknown error when downloading"
+    32022 "HTTPS lyrics require ttp_https.dll with ABI 6 in the same AddIn folder. Please install the matching x86 component."
+    32023 "The HTTPS server certificate could not be verified."
+    32024 "This proxy requires native transport, which cannot use the configured private CA."
+    32025 "The HTTPS lyric request failed:"
+    32026 "The private CA setting is invalid or its PEM file cannot be read."
 END
 LANGUAGE 4, 2
 STRINGTABLE
@@ -79,4 +84,9 @@ BEGIN
     32010 "未能在服务器上找到歌词"
     32011 "程序版本过低,请到主页下载新版本"
     32020 "下载时发生未知错误"
+    32022 "HTTPS 歌词需要同一 AddIn 目录内支持 ABI 6 的 ttp_https.dll，请安装配套的 x86 组件。"
+    32023 "无法验证 HTTPS 歌词服务器的证书。"
+    32024 "此代理需要使用系统网络组件，但系统网络组件无法使用当前配置的私有 CA。"
+    32025 "HTTPS 歌词请求失败："
+    32026 "私有 CA 配置无效或无法读取对应的 PEM 文件。"
 END

@@ -2,6 +2,8 @@
 
 2026-10-09。
 
+本文保留初期重建的接口分析。后续 HTTPS ABI 6 修复见 [p2 记录](HTTPS_ORIGINAL_PLAYER_FIXES_20261009.md)，XML 优先与 INI 迁移的当前规则见 [p3 记录](SERVER_CATALOG_XML_20261009.md)。
+
 ## 原版证据
 
 原文件 `AddIn/ttp_lrcsh.dll` 为 38,400 字节，SHA-256：

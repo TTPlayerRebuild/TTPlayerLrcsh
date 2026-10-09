@@ -65,11 +65,28 @@ bool CompleteRange(std::wstring_view range,size_t size) {
     return number(first)&&delimiter(L'-')&&number(last)&&delimiter(L'/')&&number(total)&&
         pos==range.size()&&!first&&total&&last==total-1&&total==size;
 }
+struct HttpsLibrary {
+    HMODULE dll{};const ttp_https_api_v6* api{};
+    ~HttpsLibrary(){if(dll)FreeLibrary(dll);}
+    void Load(){
+        if(api)return;
+        auto path=ModulePath();path.resize(path.find_last_of(L"\\/")+1);path+=L"ttp_https.dll";
+        if(!dll)dll=LoadLibraryExW(path.c_str(),nullptr,LOAD_WITH_ALTERED_SEARCH_PATH);
+        if(!dll)throw Failure(32022,"");
+        auto get=reinterpret_cast<ttp_https_get_api_fn>(GetProcAddress(dll,"ttp_https_get_api"));
+        const auto* base=get?get(6):nullptr;
+        if(!base || base->abi_version!=6 || base->size!=sizeof(ttp_https_api_v6))throw Failure(32022,"");
+        auto next=reinterpret_cast<const ttp_https_api_v6*>(base);
+        if(!next->exchange_ex || !next->release_exchange_ex)throw Failure(32022,"");
+        api=next;
+    }
+};
 }
 struct Transport::Impl {
     struct Cookie { std::wstring origin,path,name,value; ULONGLONG expires{~ULONGLONG{}}; };
     std::mutex mutex;
     Handle session;
+    HttpsLibrary https;
     std::vector<Cookie> cookies;
     std::wstring RequestCookies(const Address& url) {
         std::wstring result;
@@ -133,31 +150,36 @@ bool ValidUrl(std::wstring_view value){
         !(c.lpszUserName&&c.dwUserNameLength) && !(c.lpszPassword&&c.dwPasswordLength) &&
         (c.nScheme==INTERNET_SCHEME_HTTP||c.nScheme==INTERNET_SCHEME_HTTPS);
 }
+bool SecureUrl(const std::wstring& value){return Address(value).secure;}
+std::wstring UrlOrigin(const std::wstring& value){return Address(value).origin;}
 namespace {
-struct Step {Response response;unsigned status{};std::wstring location;std::vector<std::wstring> cookies;};
-std::optional<Step> Portable(const std::wstring& url,const NetworkValue& net,const std::wstring& cookies,const std::shared_ptr<Abort>& abort){
-    auto path=ModulePath();path.resize(path.find_last_of(L"\\/")+1);path+=L"ttp_https.dll";
-    HMODULE dll=LoadLibraryExW(path.c_str(),nullptr,LOAD_WITH_ALTERED_SEARCH_PATH);
-    if(!dll)return {};
-    struct Library{HMODULE h;~Library(){FreeLibrary(h);}}library{dll};
-    auto get=reinterpret_cast<ttp_https_get_api_fn>(GetProcAddress(dll,"ttp_https_get_api"));
-    auto api=get?reinterpret_cast<const ttp_https_api_v5*>(get(5)):nullptr;
-    if(!api || api->base.base.base.abi_version!=5 || api->base.base.base.size!=sizeof(*api) || !api->exchange || !api->release_exchange)return {};
-    ttp_https_exchange_request request{};request.size=sizeof(request);auto& n=request.request;n.size=sizeof(n);
+struct Step {Response response;unsigned status{};std::wstring location,range;std::vector<std::wstring> cookies;};
+std::optional<Step> Portable(HttpsLibrary& library,const std::wstring& url,const NetworkValue& net,const std::wstring& cookies,
+    const std::shared_ptr<Abort>& abort,const TlsTrust* trust){
+    library.Load();const auto* api=library.api;
+    ttp_https_exchange_ex_request extended{};extended.size=sizeof(extended);
+    auto& request=extended.exchange;request.size=sizeof(request);auto& n=request.request;n.size=sizeof(n);
     n.url=url.c_str();n.proxy_type=net.type;n.proxy_server=net.server.c_str();n.proxy_port=static_cast<int>(net.port);
     n.proxy_username=net.user.c_str();n.proxy_password=net.password.c_str();
     n.canceled=[](void* p)->int{auto* a=static_cast<Abort*>(p);return a->canceled||a->Expired()?1:0;};n.cancel_context=abort.get();
+    if(trust){n.ca_pem=reinterpret_cast<const unsigned char*>(trust->pem.c_str());n.ca_pem_size=trust->pem.size()+1;}
     const auto cookie=Utf8(cookies);request.cookie=cookie.c_str();
-    ttp_https_exchange_response response{};response.size=sizeof(response);response.response.size=sizeof(response.response);
-    struct Release{const ttp_https_api_v5* api;ttp_https_exchange_response* p;~Release(){api->release_exchange(p);}}release{api,&response};
-    char error[512]{};const int code=api->exchange(&request,&response,error,sizeof(error));
-    abort->Check();if(code==TTP_HTTPS_USE_WINHTTP)return {};
-    if(code!=TTP_HTTPS_OK)throw Failure(32004,error);
+    const auto referer=Utf8(L"https://"+Address(url).host+L"/");
+    extended.user_agent="Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1)";
+    extended.accept="image/gif, image/x-xbitmap, image/jpg, image/pjpeg, text/html, text/xml, */*";
+    extended.referer=referer.c_str();extended.body_policy=TTP_HTTPS_BODY_SUCCESS;
+    ttp_https_exchange_ex_response output{};output.size=sizeof(output);
+    auto& response=output.exchange;response.size=sizeof(response);response.response.size=sizeof(response.response);
+    struct Release{const ttp_https_api_v6* api;ttp_https_exchange_ex_response* p;~Release(){api->release_exchange_ex(p);}}release{api,&output};
+    char error[512]{};const int code=api->exchange_ex(&extended,&output,error,sizeof(error));
+    abort->Check();if(code==TTP_HTTPS_USE_WINHTTP){if(trust)throw Failure(32024,"");return {};}
+    if(code!=TTP_HTTPS_OK)throw Failure(response.response.verify_flags?32023:32025,error);
     Step step;step.status=response.http_status;
     if(response.response.body_size>BodyLimit || response.cookie_count>64)throw Failure(32005,"Invalid HTTPS response size");
     if(response.response.body_size)step.response.body.assign(reinterpret_cast<const char*>(response.response.body),response.response.body_size);
     step.response.title=Wide(response.response.title_header?response.response.title_header:"");
     step.response.url=Wide(response.response.url_header?response.response.url_header:"");step.location=Wide(response.location?response.location:"");
+    step.range=Wide(output.content_range?output.content_range:"");
     for(unsigned i=0;i<response.cookie_count;++i)step.cookies.push_back(Wide(response.set_cookies[i]));
     return step;
 }
@@ -189,9 +211,8 @@ Step Native(HINTERNET session,const std::wstring& url,const NetworkValue& net,co
     auto guard=[&]{abort->Check();};
     for(int attempt=0;attempt<2;++attempt){guard();Check(HttpSendRequestW(request,headers.c_str(),static_cast<DWORD>(headers.size()),nullptr,0));DWORD size=sizeof(step.status);Check(HttpQueryInfoW(request,HTTP_QUERY_STATUS_CODE|HTTP_QUERY_FLAG_NUMBER,&step.status,&size,nullptr));if(step.status!=407||attempt||!auth)break;credentials();}
     const bool redirected=step.status==301||step.status==302||step.status==303||step.status==307||step.status==308;
-    if(!redirected && step.status>=200 && step.status<300){char buffer[8192];for(;;){guard();DWORD count{};Check(InternetReadFile(request,buffer,sizeof(buffer),&count));if(!count)break;if(step.response.body.size()+count>BodyLimit)throw Failure(32005,"Lyric response exceeds 2 MiB");step.response.body.append(buffer,count);}
-        if(step.status==206){const auto range=Header(request,HTTP_QUERY_CONTENT_RANGE);
-            if(!range.empty()&&!CompleteRange(range,step.response.body.size()))throw Failure(32005,"Incomplete lyric range");}}
+    if(!redirected && step.status>=200 && step.status<300 && step.status!=204){char buffer[8192];for(;;){guard();DWORD count{};Check(InternetReadFile(request,buffer,sizeof(buffer),&count));if(!count)break;if(step.response.body.size()+count>BodyLimit)throw Failure(32005,"Lyric response exceeds 2 MiB");step.response.body.append(buffer,count);}}
+    if(step.status==206)step.range=Header(request,HTTP_QUERY_CONTENT_RANGE);
     for(DWORD index=0,count=0;count<64;++count){auto cookie=Header(request,HTTP_QUERY_SET_COOKIE,nullptr,&index);if(cookie.empty())break;step.cookies.push_back(std::move(cookie));}
     step.location=Header(request,HTTP_QUERY_LOCATION);
     step.response.title=Header(request,HTTP_QUERY_CUSTOM,L"tt-title");step.response.url=Header(request,HTTP_QUERY_CUSTOM,L"tt-url");
@@ -201,18 +222,22 @@ Step Native(HINTERNET session,const std::wstring& url,const NetworkValue& net,co
 Transport::Transport():impl_(std::make_unique<Impl>()){}
 Transport::~Transport()=default;
 void Transport::Initialize(const NetworkValue& net){std::lock_guard lock(impl_->mutex);if(!impl_->session.value)impl_->session.value=OpenSession(net);}
-Response Transport::Get(const std::wstring& initial,const NetworkValue& net,const std::shared_ptr<Abort>& abort){
+Response Transport::Get(const std::wstring& initial,const NetworkValue& net,const std::shared_ptr<Abort>& abort,const TlsTrust* trust){
+    if(trust && trust->invalid)throw Failure(32026,"");
     Initialize(net);
     std::lock_guard lock(impl_->mutex);std::wstring url=initial;
     for(int i=0;i<=8;++i){abort->Check();if(!ValidUrl(url))throw Failure(32005,"Invalid lyric URL");Address address(url);
-        auto cookies=impl_->RequestCookies(address);auto portable=address.secure?Portable(url,net,cookies,abort):std::optional<Step>{};
+        auto cookies=impl_->RequestCookies(address);
+        auto portable=address.secure?Portable(impl_->https,url,net,cookies,abort,trust && trust->origin==address.origin?trust:nullptr):std::optional<Step>{};
         auto step=portable?std::move(*portable):Native(impl_->session,url,net,cookies,abort);
         for(const auto& c:step.cookies)impl_->Store(address,c);
         if(step.status==301||step.status==302||step.status==303||step.status==307||step.status==308){
             if(step.location.empty())throw Failure(32005,"Missing lyric redirect");wchar_t combined[16384]{};DWORD size=static_cast<DWORD>(std::size(combined));
             Check(InternetCombineUrlW(url.c_str(),step.location.c_str(),combined,&size,ICU_NO_ENCODE));url.assign(combined,size);
             if(!ValidUrl(url) || (address.secure && !Address(url).secure))throw Failure(32005,"Invalid or downgraded lyric redirect");continue;}
-        if(step.status<200 || step.status>=300)throw Failure(step.status,"");step.response.status=step.status;return std::move(step.response);
+        if(step.status<200 || step.status>=300)throw Failure(step.status,"");
+        if(step.status==206 && !step.range.empty() && !CompleteRange(step.range,step.response.body.size()))throw Failure(32005,"Incomplete lyric range");
+        step.response.status=step.status;return std::move(step.response);
     }throw Failure(32005,"Too many lyric redirects");
 }
 }

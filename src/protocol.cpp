@@ -46,7 +46,7 @@ int DownloadCode(unsigned id,std::string_view bytes){
 }
 std::vector<Candidate> FindLyrics(Transport& transport,const Service& service,const NetworkValue& net,
     const std::shared_ptr<Abort>& abort,std::wstring_view artist,std::wstring_view title){
-    auto response=transport.Get(SearchUrl(service.url,artist,title),net,abort);
+    auto response=transport.Get(SearchUrl(service.url,artist,title),net,abort,service.trust.get());
     if(response.body.empty())throw Failure(response.status?response.status:32004,"");
     auto root=ParseXml(response.body,true);std::vector<Candidate> rows;
     for(auto& node:root.children)if(node.name=="lrc"){
@@ -57,7 +57,7 @@ std::vector<Candidate> FindLyrics(Transport& transport,const Service& service,co
 Downloaded DownloadLyric(Transport& transport,const Service& service,const NetworkValue& net,
     const std::shared_ptr<Abort>& abort,const Candidate& row){
     auto url=Base(service.url)+L"?dl?Id="+std::to_wstring(row.id)+L"&Code="+std::to_wstring(DownloadCode(static_cast<unsigned>(row.id),row.artist+row.title))+L"&";
-    auto response=transport.Get(url,net,abort);if(response.body.empty())throw Failure(response.status?response.status:32004,"");
+    auto response=transport.Get(url,net,abort,service.trust.get());if(response.body.empty())throw Failure(response.status?response.status:32004,"");
     if(response.body.starts_with("<result "))ServerError(ParseXml(response.body,true),0);
     auto text=Wide(response.body);Replace(text,L"\n\r",L"\r\n");Replace(text,L"\r\n\r",L"\r\n");
     return {std::move(text),HeaderHex(response.title),HeaderHex(response.url)};

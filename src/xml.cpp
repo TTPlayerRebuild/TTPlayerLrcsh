@@ -85,12 +85,26 @@ XmlNode ParseXml(std::string_view bytes,bool tolerant){
     if(bytes.size()>BodyLimit || bytes.find('\0')!=bytes.npos)throw Failure(32005,"Invalid XML size");
     Wide(bytes);Parser p{bytes,bytes.starts_with("\xef\xbb\xbf")?3U:0U,0,tolerant};p.Space();while(p.Special())p.Space();auto n=p.Node(0);p.Space();while(p.Special())p.Space();if(p.p!=bytes.size())p.Bad();return n;
 }
-std::string CatalogXml(std::string_view bytes,const XmlNode& root){
-    std::vector<std::pair<size_t,size_t>> remove;
-    for(const auto& [key,span]:root.attribute_spans)if(key=="query_url")remove.push_back(span);
-    for(const auto& child:root.children)if(child.name=="extra")remove.push_back({child.begin,child.end});
-    std::sort(remove.rbegin(),remove.rend());std::string out(bytes);
-    for(const auto& [begin,end]:remove)out.erase(begin,end-begin);
+std::string ServerXml(std::string_view bytes,const XmlNode& node,std::string_view ca_file){
+    auto out=std::string(bytes.substr(node.begin,node.end-node.begin));
+    for(auto i=node.attribute_spans.rbegin();i!=node.attribute_spans.rend();++i)
+        if(i->first=="ca_file")out.erase(i->second.first-node.begin,i->second.second-i->second.first);
+    if(!ca_file.empty())out.insert(1+node.name.size()," ca_file=\""+EscapeXml(ca_file)+"\"");
+    return out;
+}
+std::string CatalogXml(std::string_view bytes,const XmlNode& root,const std::vector<std::string>& servers){
+    struct Edit{size_t begin,end;std::string text;};std::vector<Edit> edits;
+    for(const auto& [key,span]:root.attribute_spans)if(key=="query_url")edits.push_back({span.first,span.second,{}});
+    size_t index=0;
+    for(const auto& child:root.children){
+        if(child.name=="extra")edits.push_back({child.begin,child.end,{}});
+        else if(child.name=="server"){
+            // Sanitize remote CA attributes even on unenumerated extra slots.
+            edits.push_back({child.begin,child.end,index<servers.size()?servers[index]:ServerXml(bytes,child)});++index;
+        }
+    }
+    std::sort(edits.begin(),edits.end(),[](const Edit& a,const Edit& b){return a.begin>b.begin;});std::string out(bytes);
+    for(const auto& e:edits)out.replace(e.begin,e.end-e.begin,e.text);
     return out;
 }
 std::string EscapeXml(std::string_view value){std::string out;for(char c:value){switch(c){case '&':out+="&amp;";break;case '"':out+="&quot;";break;case '<':out+="&lt;";break;case '>':out+="&gt;";break;default:out+=c;}}return out;}

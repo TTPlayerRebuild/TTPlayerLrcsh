@@ -92,6 +92,7 @@ void Work(const std::shared_ptr<State>& s)noexcept{
             }catch(const Failure& e){
                 auto text=Resource(e.code);if(text.empty())text=Resource(32020);
                 if(e.server_message&&*e.what())try{text=Wide(e.what());}catch(...){}
+                else if((e.code==32023 || e.code==32025)&&*e.what())try{text+=L"\r\n"+Wide(e.what());}catch(...){}
                 s->Notify(id,[&](Callback* p){p->OnError(text.c_str());});
             }catch(...){s->Notify(id,[&](Callback* p){p->OnError(Resource(32005).c_str());});}
         }

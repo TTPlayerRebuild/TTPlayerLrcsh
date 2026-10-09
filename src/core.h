@@ -43,11 +43,14 @@ struct Abort {
     ~Abort(){Close();}
 };
 struct Response {std::string body; std::wstring title,url; unsigned status{200};};
+// A private CA is an explicit local, per-origin setting. Remote catalogs may
+// neither introduce it nor widen it to another origin.
+struct TlsTrust {std::wstring origin;std::string pem;bool invalid{};};
 class Transport {
 public:
     Transport(); ~Transport();
     void Initialize(const NetworkValue&);
-    Response Get(const std::wstring&,const NetworkValue&,const std::shared_ptr<Abort>&);
+    Response Get(const std::wstring&,const NetworkValue&,const std::shared_ptr<Abort>&,const TlsTrust* trust=nullptr);
 private:
     struct Impl; std::unique_ptr<Impl> impl_;
 };
@@ -60,9 +63,10 @@ struct XmlNode {
     std::string Attr(const char* key) const {auto i=attrs.find(key);return i==attrs.end()?std::string{}:i->second;}
 };
 XmlNode ParseXml(std::string_view,bool tolerant=false);
-std::string CatalogXml(std::string_view,const XmlNode&);
+std::string CatalogXml(std::string_view,const XmlNode&,const std::vector<std::string>& servers={});
+std::string ServerXml(std::string_view,const XmlNode&,std::string_view ca_file={});
 std::string EscapeXml(std::string_view);
-struct Service {std::wstring name,url;};
+struct Service {std::wstring name,url;std::shared_ptr<const TlsTrust> trust;std::string ca_file,source_xml;};
 struct Catalog {
     std::mutex mutex; bool refreshed{}; std::vector<Service> services;
     std::wstring extra_title,extra_url;
@@ -73,6 +77,8 @@ struct Catalog {
 std::shared_ptr<Catalog> Services();
 Search* CreateSearch(std::shared_ptr<Catalog>,int);
 bool ValidUrl(std::wstring_view);
+bool SecureUrl(const std::wstring&);
+std::wstring UrlOrigin(const std::wstring&);
 struct Candidate {int id{}; std::string artist,title;};
 std::wstring SearchUrl(std::wstring_view,std::wstring_view,std::wstring_view);
 int DownloadCode(unsigned,std::string_view);
