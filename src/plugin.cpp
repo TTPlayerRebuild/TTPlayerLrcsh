@@ -20,7 +20,7 @@ public:
     ULONG STDMETHODCALLTYPE AddRef() override{return ++refs_;}
     ULONG STDMETHODCALLTYPE Release() override{auto n=--refs_;if(!n)delete this;return n;}
     HRESULT STDMETHODCALLTYPE Enumerate(int i,GUID* id,IUnknown** p) override {
-        if(!id||!p)return E_POINTER;*p=nullptr;if(i<0||i>1)return E_INVALIDARG;
+        if(!id||!p)return E_POINTER;*p=nullptr;if(i<0||static_cast<size_t>(i)>=catalog_->Count())return E_INVALIDARG;
         try{*p=new CreatorObject(catalog_,i);*id=CreatorId;return S_OK;}catch(...){return E_OUTOFMEMORY;}
     }
 };

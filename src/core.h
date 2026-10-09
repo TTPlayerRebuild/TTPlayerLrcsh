@@ -71,6 +71,8 @@ struct Catalog {
     std::mutex mutex; bool refreshed{}; std::vector<Service> services;
     std::wstring extra_title,extra_url;
     Catalog();
+    // Length is fixed at construction; INI refresh only replaces slot values.
+    size_t Count() const noexcept {return services.size();}
     Service At(int);
     void Refresh(Transport&,const NetworkValue&,const std::shared_ptr<Abort>&);
 };

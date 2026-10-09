@@ -2,6 +2,8 @@
 
 日期：2026-10-09；本地候选：`2026.10.09p3`。
 
+本文为 p3 历史记录。p4 已解除 XML 模式的两项限制，支持 1～128 个服务器；XML 优先、不自动刷新及 INI 迁移规则不变。见 [多服务器实现](MULTI_SERVER_ORIGINAL_HOST_20261009.md)。
+
 ## 确认后的规则
 
 文件均位于插件旁，扩展名由 DLL 文件名替换得到。默认是 `AddIn/ttp_lrcsh.xml` 和 `AddIn/ttp_lrcsh.ini`；两者内容格式都为 UTF-8 XML。

@@ -31,9 +31,15 @@ std::shared_ptr<const TlsTrust> LocalTrust(const Service& service){
        trust->pem.find('\0')!=trust->pem.npos || trust->pem.find("-----BEGIN CERTIFICATE-----")==trust->pem.npos)return trust;
     trust->origin=UrlOrigin(service.url);trust->invalid=false;return trust;
 }
-std::vector<Service> Parse(const XmlNode& root,std::string_view bytes,bool local){
+std::vector<Service> Parse(const XmlNode& root,std::string_view bytes,bool local,bool extended=false){
     if(root.name!="ttp_lrcsvr")throw Failure(32005,"Invalid service root");std::vector<Service> out;
-    for(const auto& n:root.children)if(n.name=="server"&&out.size()<2){
+    for(const auto& n:root.children)if(n.name=="server"){
+        // Match the rebuilt editor's bound. Never silently truncate a user XML;
+        // INI and remote legacy catalogs still use the original two slots.
+        if(out.size()==(extended?128u:2u)){
+            if(extended)throw Failure(32005,"Too many lyric servers");
+            break;
+        }
         Service s{Wide(n.Attr("name")),Wide(n.Attr("url"))};
         if(s.name.empty() || !ValidUrl(s.url)){out.push_back({});continue;}
         s.ca_file=local?n.Attr("ca_file"):std::string{};
@@ -66,12 +72,14 @@ void Save(const std::string& bytes){
 }
 Catalog::Catalog(){
     bool explicit_xml=false;
-    try{auto bytes=Read(explicit_xml);if(!bytes.empty()){auto root=ParseXml(bytes,true);services=Parse(root,bytes,true);for(auto& n:root.children)if(n.name=="extra"){extra_title=Wide(n.Attr("title"));extra_url=Wide(n.Attr("url"));break;}}}catch(...){}
+    try{auto bytes=Read(explicit_xml);if(!bytes.empty()){auto root=ParseXml(bytes,true);services=Parse(root,bytes,true,explicit_xml);for(auto& n:root.children)if(n.name=="extra"){extra_title=Wide(n.Attr("title"));extra_url=Wide(n.Attr("url"));break;}}}catch(...){}
     // XML is user-managed by the rebuilt player. The original player can
     // read it through this DLL, but must never replace it via ?svrlst.
     refreshed=explicit_xml;
     if(services.empty()&&!explicit_xml)services={{Resource(32000),Resource(32002)},{Resource(32001),Resource(32003)}};
-    while(services.size()<2)services.push_back({});
+    // Keep discoverable error factories for a broken/empty XML so the rebuilt
+    // host can still offer its catalog editor. Valid XML uses its actual count.
+    if(!explicit_xml||services.empty())while(services.size()<2)services.push_back({});
 }
 Service Catalog::At(int index){std::lock_guard lock(mutex);return index>=0&&index<static_cast<int>(services.size())?services[index]:Service{};}
 void Catalog::Refresh(Transport& transport,const NetworkValue& net,const std::shared_ptr<Abort>& abort){
