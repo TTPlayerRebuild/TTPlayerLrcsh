@@ -20,6 +20,21 @@ Action 独立构建，`Release a Version` 使用北京时间日期和递增 `pN`
 
 关闭播放器，将 DLL 放到 `AddIn`，保留原版 DLL 的备份。**原版指原版 TTPlayer.exe 播放器**：无需修改 EXE 或替换原版 ttpcomm.dll。要使用 HTTPS，必须同时部署支持 ABI 6 的 `AddIn/ttp_https.dll`；两个独立发行包需配套安装。
 
+## 默认歌词服务器
+
+| 名称 | 地址 |
+| --- | --- |
+| QianQian Plus | `https://lyrics.qianqian.plus/api/search/` |
+| Rangotec | `http://yun.rangotec.com:86/qianqian` |
+| Rangotec Desc | `http://yun.rangotec.com:86/qianqian/desc` |
+| NCAB 本地 | `http://localhost:99` |
+
+以上四项替换失效的电信／网通默认地址，顺序固定；NCAB 需先在本机启动服务。无有效 INI 且无 XML 时，原版宿主枚举四项，不再向默认服务器请求旧式 `?svrlst` 目录。搜索／下载仍使用原千千协议；NCAB 的根地址会在请求时自动补 `/`。
+
+重建版播放器读取 DLL 的四项内置资源；旧版重建播放器若仅支持原资源范围，仍只显示前两项，需要同步更新播放器。原两项资源编号保持 `32000/32001`（名称）、`32002/32003`（地址）；新增两项使用 `32030/32031`、`32032/32033`。
+
+## 自定义服务器
+
 服务器文件使用 DLL 同名文件，通常为 `AddIn/ttp_lrcsh.xml`，内容仍为 UTF-8 XML，例如：
 
 ```xml
@@ -29,7 +44,7 @@ Action 独立构建，`Release a Version` 使用北京时间日期和递增 `pN`
 ```
 
 - 重建版播放器读写 XML；无 XML 且有 INI 时，先逐字节复制 INI 为 XML，保留原 INI。后续编辑只保存 XML。
-- 原版播放器搭配本重建 DLL：有 XML 就优先读取并保持其服务器列表，不发出 `?svrlst` 刷新请求；只有无 XML 时才读取 INI 并沿用原有刷新、保存 INI 的路径。DLL 本身不迁移文件。
+- 原版播放器搭配本重建 DLL：有 XML 就优先读取并保持其服务器列表，不发出 `?svrlst` 刷新请求；只有无 XML 且加载了 INI 列表时，才沿用原有刷新、保存 INI 的路径。DLL 本身不迁移文件。已有自定义 XML／INI 不会因默认地址更新而被改写；若仍配置了旧地址，可在服务器列表中编辑，或备份并移走原配置以使用新默认值。
 - 已有 XML 即使为空、损坏或不可读，也不会被 INI 或远程列表覆盖。修改配置后，重启原版播放器以重新加载。
 
 文件优先级、原版伪代码依据和验证范围见 [XML 目录兼容说明](docs/SERVER_CATALOG_XML_20261009.md)。未经替换的原版 DLL 仍只识别 INI。
@@ -38,7 +53,7 @@ HTTPS 地址必须由服务端实际提供，且仍实现千千旧歌词协议�
 
 只有 helper 明确要求使用系统代理时才允许原生网络回退；配置了私有 CA 时拒绝该回退，避免改变证书来源。证书或 TLS 失败不会回退重试。
 
-原版播放器搭配本 DLL 时，XML 模式支持 1～128 个服务器，按 XML 中的顺序显示；只有无 XML 的 INI 模式仍保留原版两个工厂及刷新逻辑。接口布局和 GUID 不变，原版 EXE 与 ttpcomm 无需修改。服务器数量、顺序修改后须重启原版播放器；其保存的是数字索引。重建版继续通过 `Control::Configure` 使用编辑器条目。
+原版播放器搭配本 DLL 时，XML 模式支持 1～128 个服务器，按 XML 中的顺序显示；内置默认模式枚举上述四项，只有加载了 INI 的模式仍保留原版两个工厂及刷新逻辑。接口布局和 GUID 不变，原版 EXE 与 ttpcomm 无需修改。服务器数量、顺序修改后须重启原版播放器；其保存的是数字索引。重建版继续通过 `Control::Configure` 使用编辑器条目。
 
 多服务器实现、原版 GUI 第三／第八项下载及重启记忆验证见 [解除两项限制](docs/MULTI_SERVER_ORIGINAL_HOST_20261009.md)。
 

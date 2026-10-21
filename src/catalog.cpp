@@ -76,7 +76,14 @@ Catalog::Catalog(){
     // XML is user-managed by the rebuilt player. The original player can
     // read it through this DLL, but must never replace it via ?svrlst.
     refreshed=explicit_xml;
-    if(services.empty()&&!explicit_xml)services={{Resource(32000),Resource(32002)},{Resource(32001),Resource(32003)}};
+    if(services.empty()&&!explicit_xml){
+        // Keep the first two resource pairs compatible with older rebuilt hosts.
+        // 32030/31 + 32032/33 extend the built-in list without reusing error IDs.
+        for(unsigned id:{32000u,32001u,32030u,32031u})services.push_back({Resource(id),Resource(id+2)});
+        // These are independent providers, not mirrors of the former QianQian
+        // service. Its two-slot ?svrlst protocol must not replace this list.
+        refreshed=true;
+    }
     // Keep discoverable error factories for a broken/empty XML so the rebuilt
     // host can still offer its catalog editor. Valid XML uses its actual count.
     if(!explicit_xml||services.empty())while(services.size()<2)services.push_back({});
